@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Hierokles Synekdemos &mdash; Interactive Map</title>
+<meta name="description" content="An interactive map of the dioceses, provinces and cities recorded in the 6th-century Synekdemos of Hierokles, drawing on the AWMC's reconstruction." />
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+<link rel="preconnect" href="https://cawm.lib.uiowa.edu" crossorigin />
+<style>
+  :root {
+    --bg: #f5efe3;
+    --ink: #2a2622;
+    --ink-soft: #5b524a;
+    --rule: #d8cdb8;
+    --panel: rgba(248, 243, 232, 0.94);
+    --panel-strong: rgba(248, 243, 232, 0.98);
+    --accent: #8c2f1d;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --sans: "Inter", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--sans); }
+  #map { position: absolute; inset: 0; }
+
+  /* CAWM basemap is already earthy; a hair of warmth just blends it with the panels */
+  .maplibregl-canvas { filter: saturate(0.95); }
+
+  header.masthead {
+    position: absolute; top: 14px; left: 14px; z-index: 5;
+    background: var(--panel-strong);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 14px 18px 12px 18px;
+    max-width: 360px;
+    box-shadow: 0 6px 18px rgba(40,30,15,0.12);
+  }
+  header.masthead h1 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 20px;
+    margin: 0 0 2px 0;
+    letter-spacing: 0.01em;
+  }
+  header.masthead h1 .greek { font-style: italic; color: var(--accent); }
+  header.masthead p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--ink-soft);
+    line-height: 1.45;
+  }
+  header.masthead p a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); }
+  header.masthead p a:hover { color: #5a1d11; }
+
+  .panel {
+    position: absolute; z-index: 5;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    box-shadow: 0 4px 14px rgba(40,30,15,0.10);
+    padding: 12px 14px;
+    font-size: 12.5px;
+    color: var(--ink);
+  }
+  .panel h2 {
+    margin: 0 0 8px 0;
+    font-family: var(--serif);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+
+  /* layer toggles */
+  #layers { top: 14px; right: 14px; min-width: 200px; }
+  #layers label { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; user-select: none; }
+  #layers label input { accent-color: var(--accent); }
+  #layers .hint { margin-top: 6px; font-size: 11px; color: var(--ink-soft); line-height: 1.4; }
+
+  /* legend */
+  #legend { bottom: 28px; left: 14px; max-width: 240px; }
+  #legend ul { list-style: none; margin: 0; padding: 0; }
+  #legend li { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; }
+  #legend .sw {
+    width: 14px; height: 14px;
+    border: 1px solid rgba(0,0,0,0.25);
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  /* search */
+  #search { bottom: 28px; right: 14px; width: 260px; }
+  #search input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 7px 9px;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    background: #fff;
+    font: inherit;
+    font-size: 13px;
+    color: var(--ink);
+  }
+  #search input:focus { outline: 2px solid rgba(140,47,29,0.35); outline-offset: -1px; }
+  #search-results {
+    margin-top: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+    border-top: 1px solid var(--rule);
+    padding-top: 6px;
+    display: none;
+  }
+  #search-results.open { display: block; }
+  #search-results .row {
+    padding: 4px 4px;
+    cursor: pointer;
+    border-radius: 2px;
+    font-size: 12.5px;
+  }
+  #search-results .row:hover { background: rgba(140,47,29,0.10); }
+  #search-results .row .meta { display: block; font-size: 11px; color: var(--ink-soft); }
+  #search-results .empty { padding: 4px; color: var(--ink-soft); font-style: italic; }
+
+  /* popup */
+  .maplibregl-popup-content {
+    background: var(--panel-strong);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    box-shadow: 0 8px 24px rgba(40,30,15,0.18);
+    padding: 12px 14px 11px 14px;
+    font-family: var(--sans);
+    color: var(--ink);
+    max-width: 320px;
+  }
+  .maplibregl-popup-close-button { color: var(--ink-soft); font-size: 18px; padding: 2px 6px; }
+  .maplibregl-popup-tip { border-top-color: var(--panel-strong) !important; }
+  .pop-title { font-family: var(--serif); font-size: 17px; font-weight: 600; margin: 0 0 2px 0; letter-spacing: 0.01em; }
+  .pop-sub { font-size: 11.5px; color: var(--ink-soft); margin: 0 0 8px 0; letter-spacing: 0.04em; text-transform: uppercase; }
+  .pop-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .pop-table th { text-align: left; font-weight: 500; color: var(--ink-soft); padding: 3px 8px 3px 0; vertical-align: top; white-space: nowrap; }
+  .pop-table td { padding: 3px 0; vertical-align: top; }
+  .pop-table tr + tr th, .pop-table tr + tr td { border-top: 1px dashed var(--rule); }
+
+  .maplibregl-ctrl-attrib { background: rgba(248, 243, 232, 0.85) !important; }
+
+  /* hover name tag for provinces */
+  #hover-tag {
+    position: absolute;
+    z-index: 4;
+    pointer-events: none;
+    background: var(--panel-strong);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 4px 8px;
+    font-family: var(--serif);
+    font-size: 13px;
+    color: var(--ink);
+    box-shadow: 0 4px 12px rgba(40,30,15,0.18);
+    white-space: nowrap;
+    display: none;
+    transform: translate(12px, 12px);
+  }
+  #hover-tag .sub {
+    display: block;
+    font-family: var(--sans);
+    font-size: 10.5px;
+    color: var(--ink-soft);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-top: 1px;
+  }
+
+  @media (max-width: 720px) {
+    header.masthead { left: 8px; right: 8px; top: 8px; max-width: unset; }
+    #layers { right: 8px; top: auto; bottom: 8px; }
+    #legend, #search { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="map" role="application" aria-label="Map of the Hierokles Synekdemos"></div>
+<div id="hover-tag" aria-hidden="true"></div>
+
+<header class="masthead">
+  <h1>The <span class="greek">Synekdemos</span> of Hierokles</h1>
+  <p>Dioceses, provinces and cities of the East Roman Empire, c. 527&ndash;528 CE. Data: <a href="https://awmc.unc.edu/" target="_blank" rel="noopener">AWMC, UNC Chapel Hill</a> &mdash; see also their <a href="https://experience.arcgis.com/experience/46837fd10a9844ecac09cd5aff6a7541/" target="_blank" rel="noopener">ArcGIS Experience</a>.</p>
+</header>
+
+<div id="layers" class="panel">
+  <h2>Layers</h2>
+  <label><input type="checkbox" id="t-dioceses" checked /> Dioceses</label>
+  <label><input type="checkbox" id="t-provinces" checked /> Provinces</label>
+  <label><input type="checkbox" id="t-places" checked /> Cities (586)</label>
+  <div class="hint">Click any feature for details. Hover provinces for a name tag.</div>
+</div>
+
+<div id="legend" class="panel">
+  <h2>Dioceses</h2>
+  <ul id="legend-list"></ul>
+</div>
+
+<div id="search" class="panel">
+  <h2>Find a city</h2>
+  <input id="search-input" type="search" placeholder="e.g. Botrys, Oinoanda…" autocomplete="off" />
+  <div id="search-results"></div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+(() => {
+  // Diocese palette — earthy/scholarly hues, distinct under sepia tint
+  const DIOCESES = [
+    { name: 'Thrakike',    color: '#7b3f9e' },
+    { name: 'Illyrikon',   color: '#2f6fa5' },
+    { name: 'Aigyptiake',  color: '#b8860b' },
+    { name: 'Asiane',      color: '#1d7a5c' },
+    { name: 'Pontike',     color: '#a14e1f' },
+    { name: 'Anatolike',   color: '#8c2f1d' },
+  ];
+  const dioceseColor = Object.fromEntries(DIOCESES.map(d => [d.name, d.color]));
+  // The provinces file has one typo ("Aigyptake") — map it through.
+  dioceseColor['Aigyptake'] = dioceseColor['Aigyptiake'];
+
+  // ---- legend ----
+  const legendList = document.getElementById('legend-list');
+  for (const d of DIOCESES) {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="sw" style="background:${d.color}"></span>${d.name}`;
+    legendList.appendChild(li);
+  }
+
+  // ---- map ----
+  const style = {
+    version: 8,
+    glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
+    sources: {
+      cawm: {
+        type: 'raster',
+        tiles: ['https://cawm.lib.uiowa.edu/tiles/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        minzoom: 0,
+        maxzoom: 11,
+        attribution: 'Basemap &copy; <a href="https://cawm.lib.uiowa.edu/" target="_blank" rel="noopener">Consortium of Ancient World Mappers</a>',
+      },
+    },
+    layers: [
+      { id: 'bg', type: 'background', paint: { 'background-color': '#cfe1ea' } },
+      { id: 'basemap', type: 'raster', source: 'cawm' },
+    ],
+  };
+
+  const map = new maplibregl.Map({
+    container: 'map',
+    style,
+    center: [29.5, 38.0],
+    zoom: 4.2,
+    minZoom: 3,
+    maxZoom: 11,
+    attributionControl: { compact: true },
+  });
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+  map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
+
+  // Match-expression for a diocese -> color
+  const dioceseColorExpr = (field) => [
+    'match', ['get', field],
+    ...DIOCESES.flatMap(d => [d.name, d.color]),
+    'Aigyptake', dioceseColor['Aigyptiake'],
+    '#777',
+  ];
+
+  // closeOnClick is OFF: the popup's own close-on-click listener fires *after* our
+  // layer click handler, which would re-close the popup we just reopened. We close
+  // it ourselves only when the map background (no feature) is clicked.
+  const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, maxWidth: '340px' });
+
+  function escapeHTML(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+
+  function placePopupHTML(p) {
+    const rows = [
+      ['Province', p.province],
+      ['Diocese', p.diocese],
+      ['Hierokles', p.hierokles_section_line],
+      ['Honigmann p.', p.honigmann_page],
+      ['References', p.external_references],
+    ].filter(([, v]) => v != null && v !== '');
+    const subParts = [p.province, p.diocese].filter(Boolean).join(' &middot; ');
+    return `
+      <h3 class="pop-title">${escapeHTML(p.title || 'Unknown city')}</h3>
+      <p class="pop-sub">${subParts || 'City'}</p>
+      <table class="pop-table"><tbody>
+        ${rows.map(([k, v]) => `<tr><th>${k}</th><td>${escapeHTML(v)}</td></tr>`).join('')}
+      </tbody></table>
+    `;
+  }
+
+  function regionPopupHTML(kind, p) {
+    return `
+      <h3 class="pop-title">${escapeHTML(p.Name || p.Title || 'Unnamed')}</h3>
+      <p class="pop-sub">${kind}${p.Diocese ? ' &middot; ' + escapeHTML(p.Diocese) : ''}</p>
+    `;
+  }
+
+  map.on('load', async () => {
+    const [dioceses, provinces, places] = await Promise.all([
+      fetch('data/hierokles_dioceses.geojson').then(r => r.json()),
+      fetch('data/hierokles_provinces.geojson').then(r => r.json()),
+      fetch('data/hierokles_places.geojson').then(r => r.json()),
+    ]);
+
+    map.addSource('dioceses', { type: 'geojson', data: dioceses, generateId: true });
+    map.addSource('provinces', { type: 'geojson', data: provinces, generateId: true });
+    map.addSource('places', { type: 'geojson', data: places, generateId: true });
+
+    map.addLayer({
+      id: 'dioceses-fill',
+      type: 'fill',
+      source: 'dioceses',
+      paint: {
+        'fill-color': dioceseColorExpr('Title'),
+        'fill-opacity': 0.16,
+      },
+    });
+    map.addLayer({
+      id: 'dioceses-line',
+      type: 'line',
+      source: 'dioceses',
+      paint: {
+        'line-color': dioceseColorExpr('Title'),
+        'line-width': 1.8,
+        'line-opacity': 0.85,
+      },
+    });
+
+    map.addLayer({
+      id: 'provinces-fill',
+      type: 'fill',
+      source: 'provinces',
+      paint: {
+        'fill-color': dioceseColorExpr('Diocese'),
+        'fill-opacity': [
+          'case', ['boolean', ['feature-state', 'hover'], false], 0.32, 0.14,
+        ],
+      },
+    });
+    map.addLayer({
+      id: 'provinces-line',
+      type: 'line',
+      source: 'provinces',
+      paint: {
+        'line-color': dioceseColorExpr('Diocese'),
+        'line-width': 0.7,
+        'line-opacity': 0.55,
+        'line-dasharray': [2, 2],
+      },
+    });
+
+    map.addLayer({
+      id: 'places-halo',
+      type: 'circle',
+      source: 'places',
+      paint: {
+        'circle-radius': [
+          'interpolate', ['linear'], ['zoom'],
+          4, 4, 7, 7, 10, 11,
+        ],
+        'circle-color': '#f8f3e8',
+        'circle-opacity': 0.9,
+      },
+    });
+    map.addLayer({
+      id: 'places',
+      type: 'circle',
+      source: 'places',
+      paint: {
+        'circle-radius': [
+          'interpolate', ['linear'], ['zoom'],
+          4, 2.4, 7, 3.6, 10, 5.5,
+        ],
+        'circle-color': dioceseColorExpr('diocese'),
+        'circle-stroke-color': '#2a2622',
+        'circle-stroke-width': 0.6,
+      },
+    });
+
+    // Hover province — fill highlight + floating name tag
+    const hoverTag = document.getElementById('hover-tag');
+    let hoverProv = null;
+    map.on('mousemove', 'provinces-fill', e => {
+      if (!e.features.length) return;
+      map.getCanvas().style.cursor = 'pointer';
+      const f = e.features[0];
+      if (hoverProv !== null && hoverProv !== f.id) {
+        map.setFeatureState({ source: 'provinces', id: hoverProv }, { hover: false });
+      }
+      hoverProv = f.id;
+      if (hoverProv !== undefined) map.setFeatureState({ source: 'provinces', id: hoverProv }, { hover: true });
+      const p = f.properties || {};
+      const name = p.Name || 'Unnamed province';
+      const diocese = p.Diocese ? `<span class="sub">${escapeHTML(p.Diocese)}</span>` : '';
+      hoverTag.innerHTML = escapeHTML(name) + diocese;
+      hoverTag.style.left = e.point.x + 'px';
+      hoverTag.style.top = e.point.y + 'px';
+      hoverTag.style.display = 'block';
+    });
+    map.on('mouseleave', 'provinces-fill', () => {
+      map.getCanvas().style.cursor = '';
+      if (hoverProv !== null) map.setFeatureState({ source: 'provinces', id: hoverProv }, { hover: false });
+      hoverProv = null;
+      hoverTag.style.display = 'none';
+    });
+    // Hide the tag while hovering a place — popup on click is enough there
+    map.on('mouseenter', 'places', () => { hoverTag.style.display = 'none'; });
+
+    // Click handlers — places take priority since they sit on top.
+    // The popup is a single shared instance, so calling addTo with new content
+    // replaces whatever is currently shown.
+    map.on('click', 'places', e => {
+      if (!e.features.length) return;
+      const f = e.features[0];
+      popup.setLngLat(f.geometry.coordinates.slice()).setHTML(placePopupHTML(f.properties)).addTo(map);
+    });
+    map.on('click', 'provinces-fill', e => {
+      if (!e.features.length) return;
+      // skip if a place was clicked at the same pixel
+      const placeHits = map.queryRenderedFeatures(e.point, { layers: ['places'] });
+      if (placeHits.length) return;
+      popup.setLngLat(e.lngLat).setHTML(regionPopupHTML('Province', e.features[0].properties)).addTo(map);
+    });
+    map.on('click', 'dioceses-fill', e => {
+      if (!e.features.length) return;
+      const hit = map.queryRenderedFeatures(e.point, { layers: ['places', 'provinces-fill'] });
+      if (hit.length) return;
+      popup.setLngLat(e.lngLat).setHTML(regionPopupHTML('Diocese', e.features[0].properties)).addTo(map);
+    });
+    // Background click (not on any data layer) dismisses the popup.
+    map.on('click', e => {
+      const hit = map.queryRenderedFeatures(e.point, { layers: ['places', 'provinces-fill', 'dioceses-fill'] });
+      if (!hit.length) popup.remove();
+    });
+    for (const id of ['places', 'provinces-fill', 'dioceses-fill']) {
+      map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
+    }
+
+    // ---- layer toggles ----
+    function bindToggle(checkboxId, layerIds) {
+      const cb = document.getElementById(checkboxId);
+      cb.addEventListener('change', () => {
+        const vis = cb.checked ? 'visible' : 'none';
+        for (const id of layerIds) map.setLayoutProperty(id, 'visibility', vis);
+      });
+    }
+    bindToggle('t-dioceses', ['dioceses-fill', 'dioceses-line']);
+    bindToggle('t-provinces', ['provinces-fill', 'provinces-line']);
+    bindToggle('t-places', ['places-halo', 'places']);
+
+    // ---- search ----
+    const input = document.getElementById('search-input');
+    const results = document.getElementById('search-results');
+    const placesByTitle = places.features.slice().sort((a, b) =>
+      (a.properties.title || '').localeCompare(b.properties.title || ''));
+
+    function renderResults(q) {
+      results.innerHTML = '';
+      if (!q) { results.classList.remove('open'); return; }
+      const needle = q.toLowerCase();
+      const hits = placesByTitle.filter(f => (f.properties.title || '').toLowerCase().includes(needle)).slice(0, 25);
+      if (!hits.length) {
+        results.innerHTML = '<div class="empty">No matching city.</div>';
+      } else {
+        for (const f of hits) {
+          const p = f.properties;
+          const row = document.createElement('div');
+          row.className = 'row';
+          row.innerHTML = `<strong>${escapeHTML(p.title)}</strong><span class="meta">${escapeHTML([p.province, p.diocese].filter(Boolean).join(' · '))}</span>`;
+          row.addEventListener('click', () => {
+            const [lon, lat] = f.geometry.coordinates;
+            map.flyTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 7), speed: 1.2 });
+            popup.setLngLat([lon, lat]).setHTML(placePopupHTML(p)).addTo(map);
+            results.classList.remove('open');
+            input.value = p.title;
+          });
+          results.appendChild(row);
+        }
+      }
+      results.classList.add('open');
+    }
+    input.addEventListener('input', () => renderResults(input.value.trim()));
+    input.addEventListener('focus', () => { if (input.value.trim()) renderResults(input.value.trim()); });
+    document.addEventListener('click', e => {
+      if (!document.getElementById('search').contains(e.target)) results.classList.remove('open');
+    });
+  });
+
+  map.on('error', e => { console.warn('MapLibre error:', e && e.error); });
+})();
+</script>
+</body>
+</html>
