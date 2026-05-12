@@ -19,7 +19,7 @@
     --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
     --sans: "Inter", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
   }
-  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--sans); }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); font-family: var(--sans); }
   #map { position: absolute; inset: 0; }
 
   /* CAWM basemap is already earthy; a hair of warmth just blends it with the panels */
@@ -158,7 +158,7 @@
     box-shadow: 0 4px 12px rgba(40,30,15,0.18);
     white-space: nowrap;
     display: none;
-    transform: translate(12px, 12px);
+    /* offset is set per-frame in JS so the tag flips inside the viewport at edges */
   }
   #hover-tag .sub {
     display: block;
@@ -406,6 +406,13 @@
       hoverTag.style.left = e.point.x + 'px';
       hoverTag.style.top = e.point.y + 'px';
       hoverTag.style.display = 'block';
+      // Flip the tag so it stays inside the map container
+      const pad = 12;
+      const w = hoverTag.offsetWidth, h = hoverTag.offsetHeight;
+      const cw = map.getContainer().clientWidth, ch = map.getContainer().clientHeight;
+      const dx = (e.point.x + pad + w > cw) ? -(w + pad) : pad;
+      const dy = (e.point.y + pad + h > ch) ? -(h + pad) : pad;
+      hoverTag.style.transform = `translate(${dx}px, ${dy}px)`;
     });
     map.on('mouseleave', 'provinces-fill', () => {
       map.getCanvas().style.cursor = '';
